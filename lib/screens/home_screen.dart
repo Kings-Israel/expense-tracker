@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import '../providers/auth_provider.dart';
 import '../providers/expense_provider.dart';
 import '../models/expense.dart';
+import '../routes.dart';
 import 'login_screen.dart';
 import 'sms_sync_screen.dart';
 
@@ -43,13 +44,251 @@ class _HomeScreenState extends State<HomeScreen> {
     await expenseProvider.loadExpenseSummary(_selectedPeriod);
   }
 
+  Future<void> _showExpenseForm({Expense? expense}) async {
+    final isEditing = expense != null;
+    final formKey = GlobalKey<FormState>();
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final expenseProvider =
+        Provider.of<ExpenseProvider>(context, listen: false);
+
+    final amountCtrl = TextEditingController(
+      text: isEditing ? expense.originalAmount.toStringAsFixed(2) : '',
+    );
+    final currencyCtrl = TextEditingController(
+      text: isEditing
+          ? expense.originalCurrency
+          : (authProvider.user?.defaultCurrency ?? 'KES'),
+    );
+    final descCtrl =
+        TextEditingController(text: isEditing ? expense.message : '');
+    final refCtrl = TextEditingController(
+        text: isEditing ? (expense.reference ?? '') : '');
+
+    const sourceOptions = ['cash', 'bank', 'mpesa', 'mobile_money', 'other'];
+    String selectedSource = isEditing
+        ? (sourceOptions.contains(expense.source) ? expense.source! : 'other')
+        : 'cash';
+    DateTime selectedDate =
+        isEditing ? expense.transactionDate : DateTime.now();
+
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        bool isSubmitting = false;
+        return StatefulBuilder(
+          builder: (ctx, setModalState) {
+            return Padding(
+              padding: EdgeInsets.fromLTRB(
+                  16, 20, 16, MediaQuery.of(ctx).viewInsets.bottom + 24),
+              child: Form(
+                key: formKey,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(
+                      isEditing ? 'Edit Expense' : 'Add Expense',
+                      style: Theme.of(ctx)
+                          .textTheme
+                          .titleLarge
+                          ?.copyWith(fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(height: 20),
+                    Row(
+                      children: [
+                        Expanded(
+                          flex: 3,
+                          child: TextFormField(
+                            controller: amountCtrl,
+                            keyboardType:
+                                const TextInputType.numberWithOptions(
+                                    decimal: true),
+                            decoration: const InputDecoration(
+                              labelText: 'Amount *',
+                              border: OutlineInputBorder(),
+                            ),
+                            validator: (v) {
+                              if (v == null || v.isEmpty) return 'Required';
+                              if (double.tryParse(v) == null) {
+                                return 'Invalid number';
+                              }
+                              return null;
+                            },
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          flex: 2,
+                          child: TextFormField(
+                            controller: currencyCtrl,
+                            textCapitalization: TextCapitalization.characters,
+                            decoration: const InputDecoration(
+                              labelText: 'Currency *',
+                              border: OutlineInputBorder(),
+                            ),
+                            validator: (v) {
+                              if (v == null || v.isEmpty) return 'Required';
+                              if (v.length != 3) return '3-letter code';
+                              return null;
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    TextFormField(
+                      controller: descCtrl,
+                      decoration: const InputDecoration(
+                        labelText: 'Description',
+                        border: OutlineInputBorder(),
+                      ),
+                      maxLines: 2,
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: DropdownButtonFormField<String>(
+                            value: selectedSource,
+                            decoration: const InputDecoration(
+                              labelText: 'Source',
+                              border: OutlineInputBorder(),
+                            ),
+                            items: sourceOptions
+                                .map((s) => DropdownMenuItem(
+                                    value: s, child: Text(s)))
+                                .toList(),
+                            onChanged: (v) =>
+                                setModalState(() => selectedSource = v!),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: InkWell(
+                            onTap: () async {
+                              final picked = await showDatePicker(
+                                context: ctx,
+                                initialDate: selectedDate,
+                                firstDate: DateTime(2020),
+                                lastDate: DateTime.now(),
+                              );
+                              if (picked != null) {
+                                setModalState(() => selectedDate = picked);
+                              }
+                            },
+                            child: InputDecorator(
+                              decoration: const InputDecoration(
+                                labelText: 'Date',
+                                border: OutlineInputBorder(),
+                              ),
+                              child: Text(
+                                DateFormat('MMM dd, yyyy').format(selectedDate),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    TextFormField(
+                      controller: refCtrl,
+                      decoration: const InputDecoration(
+                        labelText: 'Reference (optional)',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    ElevatedButton(
+                      onPressed: isSubmitting
+                          ? null
+                          : () async {
+                              if (!formKey.currentState!.validate()) return;
+                              setModalState(() => isSubmitting = true);
+
+                              final data = <String, dynamic>{
+                                'amount': double.parse(amountCtrl.text),
+                                'currency':
+                                    currencyCtrl.text.trim().toUpperCase(),
+                                'description': descCtrl.text.trim(),
+                                'source': selectedSource,
+                                'transaction_date': DateFormat('yyyy-MM-dd')
+                                    .format(selectedDate),
+                              };
+                              if (refCtrl.text.trim().isNotEmpty) {
+                                data['reference'] = refCtrl.text.trim();
+                              }
+
+                              final bool success;
+                              if (isEditing) {
+                                success = await expenseProvider.updateExpense(
+                                    expense.id, data);
+                              } else {
+                                success =
+                                    await expenseProvider.createExpense(data);
+                              }
+
+                              if (success) {
+                                if (mounted) Navigator.pop(ctx);
+                                if (mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text(isEditing
+                                          ? 'Expense updated'
+                                          : 'Expense added'),
+                                    ),
+                                  );
+                                }
+                              } else {
+                                setModalState(() => isSubmitting = false);
+                                if (mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text(expenseProvider.error ??
+                                          'Something went wrong'),
+                                      backgroundColor: Colors.red,
+                                    ),
+                                  );
+                                }
+                              }
+                            },
+                      style: ElevatedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                      ),
+                      child: isSubmitting
+                          ? const SizedBox(
+                              height: 20,
+                              width: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : Text(
+                              isEditing ? 'Update Expense' : 'Add Expense',
+                              style: const TextStyle(fontSize: 16),
+                            ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+
+    amountCtrl.dispose();
+    currencyCtrl.dispose();
+    descCtrl.dispose();
+    refCtrl.dispose();
+  }
+
   Future<void> _logout() async {
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
     await authProvider.logout();
     if (mounted) {
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => const LoginScreen()),
-      );
+      Navigator.of(context).pushReplacement(smoothRoute(const LoginScreen()));
     }
   }
 
@@ -63,15 +302,17 @@ class _HomeScreenState extends State<HomeScreen> {
     );
 
     return Scaffold(
+      floatingActionButton: FloatingActionButton(
+        onPressed: () => _showExpenseForm(),
+        child: const Icon(Icons.add),
+      ),
       appBar: AppBar(
         title: const Text('Expense Tracker'),
         actions: [
           IconButton(
             icon: const Icon(Icons.message),
             onPressed: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const SmsSyncScreen()),
-              );
+              Navigator.of(context).push(smoothRoute(const SmsSyncScreen()));
             },
           ),
           IconButton(
@@ -285,6 +526,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             return ExpenseListItem(
                               expense: expense,
                               currencyFormat: currencyFormat,
+                              onEdit: () => _showExpenseForm(expense: expense),
                               onDelete: () async {
                                 final confirmed = await showDialog<bool>(
                                   context: context,
@@ -334,12 +576,14 @@ class ExpenseListItem extends StatelessWidget {
   final Expense expense;
   final NumberFormat currencyFormat;
   final VoidCallback onDelete;
+  final VoidCallback onEdit;
 
   const ExpenseListItem({
     Key? key,
     required this.expense,
     required this.currencyFormat,
     required this.onDelete,
+    required this.onEdit,
   }) : super(key: key);
 
   @override
@@ -377,9 +621,29 @@ class ExpenseListItem extends StatelessWidget {
               ),
           ],
         ),
-        trailing: IconButton(
-          icon: const Icon(Icons.delete_outline, color: Colors.red),
-          onPressed: onDelete,
+        trailing: PopupMenuButton<String>(
+          onSelected: (value) {
+            if (value == 'edit') onEdit();
+            if (value == 'delete') onDelete();
+          },
+          itemBuilder: (_) => [
+            const PopupMenuItem(
+              value: 'edit',
+              child: ListTile(
+                leading: Icon(Icons.edit_outlined),
+                title: Text('Edit'),
+                contentPadding: EdgeInsets.zero,
+              ),
+            ),
+            const PopupMenuItem(
+              value: 'delete',
+              child: ListTile(
+                leading: Icon(Icons.delete_outline, color: Colors.red),
+                title: Text('Delete', style: TextStyle(color: Colors.red)),
+                contentPadding: EdgeInsets.zero,
+              ),
+            ),
+          ],
         ),
         onTap: () {
           showDialog(

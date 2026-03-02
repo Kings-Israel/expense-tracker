@@ -5,7 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 class ApiService {
   // Update this to your Laravel backend URL
   static const String baseUrl =
-      'http://10.0.2.2:8000/api'; // For Android emulator
+      'https://loandisk.kingsisrael.com/api'; // For Android emulator
   // static const String baseUrl = 'http://localhost:8000/api'; // For iOS simulator
   // static const String baseUrl = 'https://your-api-domain.com/api'; // For production
 
@@ -191,6 +191,39 @@ class ApiService {
 
     if (response.statusCode != 200) {
       throw Exception('Failed to delete expense');
+    }
+  }
+
+  Future<Map<String, dynamic>> createExpense(Map<String, dynamic> data) async {
+    final headers = await _getAuthHeaders();
+    final response = await http.post(
+      Uri.parse('$baseUrl/expenses'),
+      headers: headers,
+      body: jsonEncode(data),
+    );
+
+    if (response.statusCode == 201) {
+      return jsonDecode(response.body);
+    } else {
+      final error = jsonDecode(response.body);
+      throw Exception(error['message'] ?? 'Failed to create expense');
+    }
+  }
+
+  Future<Map<String, dynamic>> updateExpense(
+      int id, Map<String, dynamic> data) async {
+    final headers = await _getAuthHeaders();
+    final response = await http.put(
+      Uri.parse('$baseUrl/expenses/$id'),
+      headers: headers,
+      body: jsonEncode(data),
+    );
+
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body);
+    } else {
+      final error = jsonDecode(response.body);
+      throw Exception(error['message'] ?? 'Failed to update expense');
     }
   }
 }

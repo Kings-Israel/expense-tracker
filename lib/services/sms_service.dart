@@ -20,7 +20,7 @@ class SmsService {
     }
 
     final messages = await _query.querySms(
-      kinds: [SmsQueryKind.inbox],
+      kinds: [SmsQueryKind.Inbox],
       count: 500,
     );
 

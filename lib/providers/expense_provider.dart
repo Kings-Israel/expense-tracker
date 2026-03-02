@@ -82,6 +82,30 @@ class ExpenseProvider with ChangeNotifier {
     }
   }
 
+  Future<bool> createExpense(Map<String, dynamic> data) async {
+    try {
+      await _apiService.createExpense(data);
+      await loadExpenseSummary(_currentPeriod);
+      return true;
+    } catch (e) {
+      _error = e.toString().replaceAll('Exception: ', '');
+      notifyListeners();
+      return false;
+    }
+  }
+
+  Future<bool> updateExpense(int id, Map<String, dynamic> data) async {
+    try {
+      await _apiService.updateExpense(id, data);
+      await loadExpenseSummary(_currentPeriod);
+      return true;
+    } catch (e) {
+      _error = e.toString().replaceAll('Exception: ', '');
+      notifyListeners();
+      return false;
+    }
+  }
+
   void clearError() {
     _error = null;
     notifyListeners();
